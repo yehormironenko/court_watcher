@@ -30,11 +30,47 @@ func New(bot *tgbotapi.BotAPI, store *storage.Storage) *Checker {
 func (c *Checker) Start() {
 	log.Println("🔍 Checker service started")
 
-	// Первая проверка сразу при старте (отправляем все доступные слоты)
-	c.checkAll(true)
+	// Инициализируем кеш для существующих подписок без отправки уведомлений
+	c.initializeExistingSubscriptions()
 
-	// Адаптивный таймер: 15 минут днем, 3 часа ночью
+	// Адаптивный таймер: 20 минут днем, 3 часа ночью
 	go c.adaptiveCheckLoop()
+}
+
+// initializeExistingSubscriptions инициализирует кеш для существующих подписок без отправки уведомлений
+func (c *Checker) initializeExistingSubscriptions() {
+	log.Println("🔄 Initializing cache for existing subscriptions...")
+
+	// Получаем все активные подписки
+	subscriptions, err := c.Store.List()
+	if err != nil {
+		log.Printf("⚠️ Error fetching subscriptions: %v", err)
+		return
+	}
+
+	log.Printf("📋 Found %d existing subscriptions to initialize", len(subscriptions))
+
+	for _, sub := range subscriptions {
+		// Пропускаем неполные подписки
+		if len(sub.Districts) == 0 || len(sub.Courts) == 0 || len(sub.Days) == 0 {
+			continue
+		}
+
+		log.Printf("🔄 Initializing cache for chatID: %d", sub.ChatID)
+
+		// Собираем все доступные слоты
+		allSlots := c.findAvailableSlots(sub)
+
+		// Фильтруем по выбранным кортам
+		filteredSlots := c.filterBySelectedCourts(allSlots, sub.Courts)
+
+		// Сохраняем в кеш БЕЗ отправки уведомлений
+		c.Store.SaveLastSlots(sub.ChatID, filteredSlots)
+
+		log.Printf("  ✅ Cached %d slots for chatID: %d", len(filteredSlots), sub.ChatID)
+	}
+
+	log.Println("✅ Cache initialization completed")
 }
 
 // adaptiveCheckLoop запускает проверки с адаптивным интервалом
