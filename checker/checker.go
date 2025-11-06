@@ -50,8 +50,8 @@ func (c *Checker) adaptiveCheckLoop() {
 			sleepDuration = 4 * time.Hour
 			log.Println("😴 Night mode: next check in 3 hours")
 		} else {
-			sleepDuration = 30 * time.Minute
-			log.Println("🔍 Day mode: next check in 30 minutes")
+			sleepDuration = 20 * time.Minute
+			log.Println("🔍 Day mode: next check in 20 minutes")
 		}
 
 		time.Sleep(sleepDuration)
