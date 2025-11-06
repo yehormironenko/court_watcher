@@ -25,3 +25,4 @@ primary_region = 'iad'
   memory = "512mb"
   cpu_kind = "shared"
   cpus = 0.5
+  memory_mb = 512
