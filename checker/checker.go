@@ -44,14 +44,14 @@ func (c *Checker) adaptiveCheckLoop() {
 		hour := now.Hour()
 
 		// С 1:00 до 8:00 - проверяем раз в 3 часа
-		// С 8:00 до 2:00 - проверяем каждые 15 минут
+		// С 8:00 до 2:00 - проверяем каждые 30 минут
 		var sleepDuration time.Duration
 		if hour >= 1 && hour < 8 {
 			sleepDuration = 3 * time.Hour
 			log.Println("😴 Night mode: next check in 3 hours")
 		} else {
-			sleepDuration = 15 * time.Minute
-			log.Println("🔍 Day mode: next check in 15 minutes")
+			sleepDuration = 30 * time.Minute
+			log.Println("🔍 Day mode: next check in 30 minutes")
 		}
 
 		time.Sleep(sleepDuration)
