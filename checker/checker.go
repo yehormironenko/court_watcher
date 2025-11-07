@@ -129,7 +129,10 @@ func (c *Checker) checkSubscription(sub *storage.Subscription, isInitial bool) {
 	// Фильтруем по выбранным кортам
 	filteredSlots := c.filterBySelectedCourts(allSlots, sub.Courts)
 
-	log.Printf("  → Found %d slots (after filtering by selected courts)", len(filteredSlots))
+	// Фильтруем слоты, которые уже прошли
+	filteredSlots = c.filterPastSlots(filteredSlots)
+
+	log.Printf("  → Found %d slots (after filtering by selected courts and removing past slots)", len(filteredSlots))
 
 	if isInitial {
 		// Первая проверка - отправляем все доступные слоты
@@ -256,6 +259,28 @@ func (c *Checker) filterBySelectedCourts(slots []types.Slot, selectedCourts []st
 
 	for _, slot := range slots {
 		if courtsMap[slot.ClubID] {
+			filtered = append(filtered, slot)
+		}
+	}
+
+	return filtered
+}
+
+// filterPastSlots фильтрует слоты, которые уже прошли
+func (c *Checker) filterPastSlots(slots []types.Slot) []types.Slot {
+	filtered := make([]types.Slot, 0)
+	now := time.Now()
+
+	for _, slot := range slots {
+		// Парсим дату и время слота
+		slotDateTime, err := time.Parse("2006-01-02 15:04", slot.Date+" "+slot.Time)
+		if err != nil {
+			log.Printf("⚠️ Error parsing slot date/time: %v (date=%s, time=%s)", err, slot.Date, slot.Time)
+			continue
+		}
+
+		// Проверяем, что слот в будущем (с запасом в 5 минут)
+		if slotDateTime.After(now.Add(-5 * time.Minute)) {
 			filtered = append(filtered, slot)
 		}
 	}

@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"time"
 
 	"court-bot/checker"
 	"court-bot/handlers"
@@ -29,6 +30,15 @@ func initStorage() {
 }
 
 func main() {
+	// Set timezone to Europe/Warsaw (CET/CEST)
+	loc, err := time.LoadLocation("Europe/Warsaw")
+	if err != nil {
+		log.Printf("⚠️ Failed to load Warsaw timezone: %v (using UTC)", err)
+	} else {
+		time.Local = loc
+		log.Printf("🌍 Timezone set to Europe/Warsaw (current time: %s)", time.Now().Format("2006-01-02 15:04:05 MST"))
+	}
+
 	token := os.Getenv("TELEGRAM_BOT_TOKEN")
 	if token == "" {
 		log.Fatal("❌ TELEGRAM_BOT_TOKEN not set")
