@@ -89,6 +89,53 @@ func (s *Storage) Delete(chatID int64) error {
 	return s.client.Del(ctx, key).Err()
 }
 
+func (s *Storage) GetCurrent(chatID int64) (*Subscription, error) {
+	// Сначала проверяем check-режим
+	sub, err := s.GetCheck(chatID)
+	if err != nil {
+		return nil, err
+	}
+	if sub != nil {
+		return sub, nil
+	}
+
+	// Если нет check-подписки, проверяем обычную
+	return s.Get(chatID)
+}
+
+func (s *Storage) GetCheck(chatID int64) (*Subscription, error) {
+	key := fmt.Sprintf("check:%d", chatID)
+	val, err := s.client.Get(ctx, key).Result()
+	if err == redis.Nil {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var sub Subscription
+	if err := json.Unmarshal([]byte(val), &sub); err != nil {
+		return nil, err
+	}
+	return &sub, nil
+}
+
+// SaveCheck сохраняет временную проверку с TTL (5 минут как safety net)
+func (s *Storage) SaveCheck(sub *Subscription) error {
+	key := fmt.Sprintf("check:%d", sub.ChatID)
+	data, err := json.Marshal(sub)
+	if err != nil {
+		return err
+	}
+	// TTL = 5 минут для автоматической очистки незавершенных проверок
+	return s.client.Set(ctx, key, data, 5*time.Minute).Err()
+}
+
+// DeleteCheck удаляет временную проверку
+func (s *Storage) DeleteCheck(chatID int64) error {
+	key := fmt.Sprintf("check:%d", chatID)
+	return s.client.Del(ctx, key).Err()
+}
+
 func (s *Storage) Ping() error {
 	return s.client.Ping(ctx).Err()
 }

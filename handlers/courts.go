@@ -1,11 +1,12 @@
 package handlers
 
 import (
-	"court-bot/parser"
 	"fmt"
 	"log"
 	"strconv"
 	"strings"
+
+	"court-bot/parser"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
@@ -21,7 +22,9 @@ type CourtInfo struct {
 var courtsIndexCache = make(map[int64][]CourtInfo)
 
 func (h *Handler) SendCourtsSelection(chatID int64) {
-	sub, err := h.Store.Get(chatID)
+
+	sub, err := h.Store.GetCurrent(chatID)
+
 	if err != nil || sub == nil {
 		h.Bot.Send(tgbotapi.NewMessage(chatID, "⚠️ Ошибка при загрузке подписки."))
 		return
@@ -117,7 +120,8 @@ func (h *Handler) HandleCourtToggle(cq *tgbotapi.CallbackQuery, courtIndexStr st
 
 	courtInfo := courtInfos[courtIndex]
 
-	sub, err := h.Store.Get(chatID)
+	sub, err := h.Store.GetCurrent(chatID)
+
 	if err != nil || sub == nil {
 		h.Bot.Send(tgbotapi.NewMessage(chatID, "⚠️ Ошибка при загрузке подписки."))
 		h.Bot.Request(tgbotapi.NewCallback(cq.ID, "Ошибка"))
@@ -140,7 +144,12 @@ func (h *Handler) HandleCourtToggle(cq *tgbotapi.CallbackQuery, courtIndexStr st
 		sub.Courts = append(sub.Courts, courtInfo.ID)
 	}
 
-	if err := h.Store.Save(sub); err != nil {
+	if h.checkMode[chatID] {
+		err = h.Store.SaveCheck(sub)
+	} else {
+		err = h.Store.Save(sub)
+	}
+	if err != nil {
 		h.Bot.Send(tgbotapi.NewMessage(chatID, "⚠️ Не удалось сохранить выбор корта."))
 		h.Bot.Request(tgbotapi.NewCallback(cq.ID, "Ошибка"))
 		return
@@ -155,7 +164,8 @@ func (h *Handler) HandleCourtToggle(cq *tgbotapi.CallbackQuery, courtIndexStr st
 func (h *Handler) HandleCourtsDone(cq *tgbotapi.CallbackQuery) {
 	chatID := cq.Message.Chat.ID
 
-	sub, err := h.Store.Get(chatID)
+	sub, err := h.Store.GetCurrent(chatID)
+
 	if err != nil || sub == nil {
 		h.Bot.Send(tgbotapi.NewMessage(chatID, "⚠️ Ошибка при загрузке подписки."))
 		h.Bot.Request(tgbotapi.NewCallback(cq.ID, "Ошибка"))

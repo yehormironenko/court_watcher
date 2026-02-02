@@ -1,9 +1,10 @@
 package handlers
 
 import (
-	"court-bot/storage"
 	"fmt"
 	"strings"
+
+	"court-bot/storage"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
@@ -14,16 +15,18 @@ type CheckerInterface interface {
 }
 
 type Handler struct {
-	Bot     *tgbotapi.BotAPI
-	Store   *storage.Storage
-	Checker CheckerInterface
+	Bot       *tgbotapi.BotAPI
+	Store     *storage.Storage
+	Checker   CheckerInterface
+	checkMode map[int64]bool
 }
 
 func New(bot *tgbotapi.BotAPI, store *storage.Storage, checker CheckerInterface) *Handler {
 	return &Handler{
-		Bot:     bot,
-		Store:   store,
-		Checker: checker,
+		Bot:       bot,
+		Store:     store,
+		Checker:   checker,
+		checkMode: make(map[int64]bool),
 	}
 }
 
@@ -32,11 +35,18 @@ func (h *Handler) HandleStart(msg *tgbotapi.Message) {
 		"Доступные команды:\n" +
 		"/subscribe — настроить подписку на уведомления\n" +
 		"/my_subs — показать мои подписки\n" +
-		"/cancel — отменить текущую подписку"
+		"/cancel — отменить текущую подписку\n" +
+		"/check — проверить доступные корты в определенное время"
 	h.Bot.Send(tgbotapi.NewMessage(msg.Chat.ID, text))
 }
 
 func (h *Handler) HandleSubscribe(msg *tgbotapi.Message) {
+	h.checkMode[msg.Chat.ID] = false
+	h.sendDistrictSelection(msg.Chat.ID)
+}
+
+func (h *Handler) HandleCheckCourts(msg *tgbotapi.Message) {
+	h.checkMode[msg.Chat.ID] = true
 	h.sendDistrictSelection(msg.Chat.ID)
 }
 

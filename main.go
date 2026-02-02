@@ -108,6 +108,9 @@ func handleMessage(bot *tgbotapi.BotAPI, h *handlers.Handler, msg *tgbotapi.Mess
 	case "cancel":
 		h.HandleCancel(msg)
 
+	case "check":
+		h.HandleCheckCourts(msg)
+
 	default:
 		bot.Send(tgbotapi.NewMessage(msg.Chat.ID, "Неизвестная команда. Попробуй /start"))
 	}

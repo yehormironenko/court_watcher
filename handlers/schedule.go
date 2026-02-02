@@ -2,7 +2,9 @@ package handlers
 
 import (
 	"fmt"
+	"log"
 	"strings"
+	"time"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
@@ -21,7 +23,7 @@ var weekDays = []struct {
 }
 
 func (h *Handler) SendDaysSelection(chatID int64) {
-	sub, err := h.Store.Get(chatID)
+	sub, err := h.Store.GetCurrent(chatID)
 	if err != nil || sub == nil {
 		h.Bot.Send(tgbotapi.NewMessage(chatID, "⚠️ Ошибка при загрузке подписки."))
 		return
@@ -62,7 +64,7 @@ func (h *Handler) buildDaysKeyboard(selectedDays []string) tgbotapi.InlineKeyboa
 func (h *Handler) HandleDayToggle(cq *tgbotapi.CallbackQuery, day string) {
 	chatID := cq.Message.Chat.ID
 
-	sub, err := h.Store.Get(chatID)
+	sub, err := h.Store.GetCurrent(chatID)
 	if err != nil || sub == nil {
 		h.Bot.Send(tgbotapi.NewMessage(chatID, "⚠️ Ошибка при загрузке подписки."))
 		h.Bot.Request(tgbotapi.NewCallback(cq.ID, "Ошибка"))
@@ -84,8 +86,12 @@ func (h *Handler) HandleDayToggle(cq *tgbotapi.CallbackQuery, day string) {
 	} else {
 		sub.Days = append(sub.Days, day)
 	}
-
-	if err := h.Store.Save(sub); err != nil {
+	if h.checkMode[chatID] {
+		err = h.Store.SaveCheck(sub)
+	} else {
+		err = h.Store.Save(sub)
+	}
+	if err != nil {
 		h.Bot.Send(tgbotapi.NewMessage(chatID, "⚠️ Не удалось сохранить выбор."))
 		h.Bot.Request(tgbotapi.NewCallback(cq.ID, "Ошибка"))
 		return
@@ -99,7 +105,7 @@ func (h *Handler) HandleDayToggle(cq *tgbotapi.CallbackQuery, day string) {
 func (h *Handler) HandleDaysAll(cq *tgbotapi.CallbackQuery) {
 	chatID := cq.Message.Chat.ID
 
-	sub, err := h.Store.Get(chatID)
+	sub, err := h.Store.GetCurrent(chatID)
 	if err != nil || sub == nil {
 		h.Bot.Send(tgbotapi.NewMessage(chatID, "⚠️ Ошибка при загрузке подписки."))
 		h.Bot.Request(tgbotapi.NewCallback(cq.ID, "Ошибка"))
@@ -107,7 +113,12 @@ func (h *Handler) HandleDaysAll(cq *tgbotapi.CallbackQuery) {
 	}
 
 	sub.Days = []string{"Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"}
-	if err := h.Store.Save(sub); err != nil {
+	if h.checkMode[chatID] {
+		err = h.Store.SaveCheck(sub)
+	} else {
+		err = h.Store.Save(sub)
+	}
+	if err != nil {
 		h.Bot.Send(tgbotapi.NewMessage(chatID, "⚠️ Не удалось сохранить выбор."))
 		h.Bot.Request(tgbotapi.NewCallback(cq.ID, "Ошибка"))
 		return
@@ -121,7 +132,7 @@ func (h *Handler) HandleDaysAll(cq *tgbotapi.CallbackQuery) {
 func (h *Handler) HandleDaysWeekdays(cq *tgbotapi.CallbackQuery) {
 	chatID := cq.Message.Chat.ID
 
-	sub, err := h.Store.Get(chatID)
+	sub, err := h.Store.GetCurrent(chatID)
 	if err != nil || sub == nil {
 		h.Bot.Send(tgbotapi.NewMessage(chatID, "⚠️ Ошибка при загрузке подписки."))
 		h.Bot.Request(tgbotapi.NewCallback(cq.ID, "Ошибка"))
@@ -129,7 +140,12 @@ func (h *Handler) HandleDaysWeekdays(cq *tgbotapi.CallbackQuery) {
 	}
 
 	sub.Days = []string{"Mon", "Tue", "Wed", "Thu", "Fri"}
-	if err := h.Store.Save(sub); err != nil {
+	if h.checkMode[chatID] {
+		err = h.Store.SaveCheck(sub)
+	} else {
+		err = h.Store.Save(sub)
+	}
+	if err != nil {
 		h.Bot.Send(tgbotapi.NewMessage(chatID, "⚠️ Не удалось сохранить выбор."))
 		h.Bot.Request(tgbotapi.NewCallback(cq.ID, "Ошибка"))
 		return
@@ -143,7 +159,7 @@ func (h *Handler) HandleDaysWeekdays(cq *tgbotapi.CallbackQuery) {
 func (h *Handler) HandleDaysDone(cq *tgbotapi.CallbackQuery) {
 	chatID := cq.Message.Chat.ID
 
-	sub, err := h.Store.Get(chatID)
+	sub, err := h.Store.GetCurrent(chatID)
 	if err != nil || sub == nil {
 		h.Bot.Send(tgbotapi.NewMessage(chatID, "⚠️ Ошибка при загрузке подписки."))
 		h.Bot.Request(tgbotapi.NewCallback(cq.ID, "Ошибка"))
@@ -199,7 +215,7 @@ func (h *Handler) HandleTimePreset(cq *tgbotapi.CallbackQuery, timeRange string)
 
 	timeFrom, timeTo := parts[0], parts[1]
 
-	sub, err := h.Store.Get(chatID)
+	sub, err := h.Store.GetCurrent(chatID)
 	if err != nil || sub == nil {
 		h.Bot.Send(tgbotapi.NewMessage(chatID, "⚠️ Ошибка при загрузке подписки."))
 		h.Bot.Request(tgbotapi.NewCallback(cq.ID, "Ошибка"))
@@ -208,8 +224,12 @@ func (h *Handler) HandleTimePreset(cq *tgbotapi.CallbackQuery, timeRange string)
 
 	sub.TimeFrom = timeFrom
 	sub.TimeTo = timeTo
-
-	if err := h.Store.Save(sub); err != nil {
+	if h.checkMode[chatID] {
+		err = h.Store.SaveCheck(sub)
+	} else {
+		err = h.Store.Save(sub)
+	}
+	if err != nil {
 		h.Bot.Send(tgbotapi.NewMessage(chatID, "⚠️ Не удалось сохранить время."))
 		h.Bot.Request(tgbotapi.NewCallback(cq.ID, "Ошибка"))
 		return
@@ -298,7 +318,7 @@ func (h *Handler) HandleTimeFromNav(cq *tgbotapi.CallbackQuery, offset string) {
 func (h *Handler) HandleTimeFrom(cq *tgbotapi.CallbackQuery, timeFrom string) {
 	chatID := cq.Message.Chat.ID
 
-	sub, err := h.Store.Get(chatID)
+	sub, err := h.Store.GetCurrent(chatID)
 	if err != nil || sub == nil {
 		h.Bot.Send(tgbotapi.NewMessage(chatID, "⚠️ Ошибка при загрузке подписки."))
 		h.Bot.Request(tgbotapi.NewCallback(cq.ID, "Ошибка"))
@@ -306,7 +326,12 @@ func (h *Handler) HandleTimeFrom(cq *tgbotapi.CallbackQuery, timeFrom string) {
 	}
 
 	sub.TimeFrom = timeFrom
-	if err := h.Store.Save(sub); err != nil {
+	if h.checkMode[chatID] {
+		err = h.Store.SaveCheck(sub)
+	} else {
+		err = h.Store.Save(sub)
+	}
+	if err != nil {
 		h.Bot.Send(tgbotapi.NewMessage(chatID, "⚠️ Не удалось сохранить время."))
 		h.Bot.Request(tgbotapi.NewCallback(cq.ID, "Ошибка"))
 		return
@@ -339,7 +364,7 @@ func (h *Handler) HandleTimeToNav(cq *tgbotapi.CallbackQuery, offset string) {
 func (h *Handler) HandleTimeTo(cq *tgbotapi.CallbackQuery, timeTo string) {
 	chatID := cq.Message.Chat.ID
 
-	sub, err := h.Store.Get(chatID)
+	sub, err := h.Store.GetCurrent(chatID)
 	if err != nil || sub == nil {
 		h.Bot.Send(tgbotapi.NewMessage(chatID, "⚠️ Ошибка при загрузке подписки."))
 		h.Bot.Request(tgbotapi.NewCallback(cq.ID, "Ошибка"))
@@ -353,7 +378,12 @@ func (h *Handler) HandleTimeTo(cq *tgbotapi.CallbackQuery, timeTo string) {
 	}
 
 	sub.TimeTo = timeTo
-	if err := h.Store.Save(sub); err != nil {
+	if h.checkMode[chatID] {
+		err = h.Store.SaveCheck(sub)
+	} else {
+		err = h.Store.Save(sub)
+	}
+	if err != nil {
 		h.Bot.Send(tgbotapi.NewMessage(chatID, "⚠️ Не удалось сохранить время."))
 		h.Bot.Request(tgbotapi.NewCallback(cq.ID, "Ошибка"))
 		return
@@ -364,30 +394,73 @@ func (h *Handler) HandleTimeTo(cq *tgbotapi.CallbackQuery, timeTo string) {
 }
 
 func (h *Handler) SendSubscriptionSummary(chatID int64) {
-	sub, err := h.Store.Get(chatID)
+	// Определяем режим и загружаем подписку
+	isCheckMode := h.checkMode[chatID]
+	sub, err := h.Store.GetCurrent(chatID) // ← GetCurrent вместо if/else
+
 	if err != nil || sub == nil {
 		h.Bot.Send(tgbotapi.NewMessage(chatID, "⚠️ Ошибка при загрузке подписки."))
 		return
 	}
 
-	text := fmt.Sprintf(
-		"✅ Подписка настроена!\n\n"+
-			"🏙 Районы: %s\n"+
-			"🎾 Корты: %d выбрано\n"+
-			"📅 Дни: %s\n"+
-			"⏰ Время: %s - %s\n\n"+
-			"Проверяю доступные слоты...",
-		strings.Join(sub.Districts, ", "),
-		len(sub.Courts),
-		formatDays(sub.Days),
-		sub.TimeFrom,
-		sub.TimeTo,
-	)
+	var text string
+	if isCheckMode {
+		// Режим check - одноразовая проверка
+		text = fmt.Sprintf(
+			"🔍 Выполняю разовую проверку!\n\n"+
+				"🏙 Районы: %s\n"+
+				"🎾 Корты: %d выбрано\n"+
+				"📅 Дни: %s\n"+
+				"⏰ Время: %s - %s\n\n"+
+				"Ищу доступные слоты...",
+			strings.Join(sub.Districts, ", "),
+			len(sub.Courts),
+			formatDays(sub.Days),
+			sub.TimeFrom,
+			sub.TimeTo,
+		)
+	} else {
+		// Режим subscribe - постоянная подписка
+		text = fmt.Sprintf(
+			"✅ Подписка настроена!\n\n"+
+				"🏙 Районы: %s\n"+
+				"🎾 Корты: %d выбрано\n"+
+				"📅 Дни: %s\n"+
+				"⏰ Время: %s - %s\n\n"+
+				"Проверяю доступные слоты...",
+			strings.Join(sub.Districts, ", "),
+			len(sub.Courts),
+			formatDays(sub.Days),
+			sub.TimeFrom,
+			sub.TimeTo,
+		)
+	}
 
 	h.Bot.Send(tgbotapi.NewMessage(chatID, text))
 
-	// Запускаем проверку доступности сразу после создания подписки
+	// Запускаем проверку для обоих режимов
 	if h.Checker != nil {
 		h.Checker.CheckSubscriptionNow(chatID)
+	}
+
+	// Если режим check, удаляем временную подписку после проверки
+	if isCheckMode {
+		go func() {
+			// CheckSubscriptionNow запускается в goroutine и читает из Redis (checker.go:156-164)
+			// Ждем пока checker прочитает подписку
+			time.Sleep(2 * time.Second)
+
+			if err := h.Store.DeleteCheck(chatID); err != nil {
+				log.Printf("⚠️ Ошибка при удалении временной подписки: %v", err)
+			} else {
+				log.Printf("🗑️ Временная подписка удалена для chatID: %d", chatID)
+			}
+
+			// Очищаем флаг режима
+			delete(h.checkMode, chatID)
+		}()
+	} else {
+		// Очищаем флаг режима для subscribe тоже
+		delete(h.checkMode, chatID)
 	}
 }

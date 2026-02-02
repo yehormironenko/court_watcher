@@ -87,7 +87,8 @@ func (h *Handler) HandleDistrictsDone(cq *tgbotapi.CallbackQuery) {
 		return
 	}
 
-	sub, err := h.Store.Get(chatID)
+	sub, err := h.Store.GetCurrent(chatID)
+
 	if err != nil {
 		h.Bot.Send(tgbotapi.NewMessage(chatID, "⚠️ Ошибка при чтении подписки."))
 		h.Bot.Request(tgbotapi.NewCallback(cq.ID, "Ошибка"))
@@ -98,7 +99,12 @@ func (h *Handler) HandleDistrictsDone(cq *tgbotapi.CallbackQuery) {
 	}
 
 	sub.Districts = selectedDistricts
-	if err := h.Store.Save(sub); err != nil {
+	if h.checkMode[chatID] {
+		err = h.Store.SaveCheck(sub)
+	} else {
+		err = h.Store.Save(sub)
+	}
+	if err != nil {
 		h.Bot.Send(tgbotapi.NewMessage(chatID, "⚠️ Не удалось сохранить выбор."))
 		h.Bot.Request(tgbotapi.NewCallback(cq.ID, "Ошибка"))
 		return
