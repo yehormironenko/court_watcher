@@ -35,6 +35,7 @@ func (h *Handler) HandleStart(msg *tgbotapi.Message) {
 		"Доступные команды:\n" +
 		"/subscribe — настроить подписку на уведомления\n" +
 		"/my_subs — показать мои подписки\n" +
+		"/get_current — проверить прямо сейчас (по подписке)\n" +
 		"/cancel — отменить текущую подписку\n" +
 		"/check — проверить доступные корты в определенное время"
 	h.Bot.Send(tgbotapi.NewMessage(msg.Chat.ID, text))
@@ -117,4 +118,47 @@ func formatDays(days []string) string {
 		}
 	}
 	return strings.Join(result, ", ")
+}
+
+func (h *Handler) HandleGetCurrent(msg *tgbotapi.Message) {
+	chatID := msg.Chat.ID
+
+	// Проверяем наличие подписки
+	sub, err := h.Store.Get(chatID)
+	if err != nil {
+		h.Bot.Send(tgbotapi.NewMessage(chatID, "⚠️ Ошибка при загрузке подписки."))
+		return
+	}
+
+	if sub == nil {
+		h.Bot.Send(tgbotapi.NewMessage(chatID, "У тебя нет активной подписки.\n\nИспользуй /subscribe чтобы создать подписку или /check для разовой проверки."))
+		return
+	}
+
+	// Проверяем что подписка полная (все параметры заданы)
+	if len(sub.Districts) == 0 || len(sub.Courts) == 0 || len(sub.Days) == 0 || sub.TimeFrom == "" || sub.TimeTo == "" {
+		h.Bot.Send(tgbotapi.NewMessage(chatID, "⚠️ Твоя подписка неполная.\n\nИспользуй /subscribe чтобы завершить настройку."))
+		return
+	}
+
+	// Отправляем сообщение о начале проверки
+	text := fmt.Sprintf("🔍 Проверяю доступность кортов по твоей подписке...\n\n"+
+		"🏙 Районы: %s\n"+
+		"🎾 Корты: %d выбрано\n"+
+		"📅 Дни: %s\n"+
+		"⏰ Время: %s - %s",
+		strings.Join(sub.Districts, ", "),
+		len(sub.Courts),
+		formatDays(sub.Days),
+		sub.TimeFrom,
+		sub.TimeTo)
+
+	h.Bot.Send(tgbotapi.NewMessage(chatID, text))
+
+	// Запускаем проверку
+	if h.Checker != nil {
+		h.Checker.CheckSubscriptionNow(chatID)
+	} else {
+		h.Bot.Send(tgbotapi.NewMessage(chatID, "⚠️ Сервис проверки временно недоступен."))
+	}
 }
