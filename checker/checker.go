@@ -154,7 +154,7 @@ func (c *Checker) checkSubscription(sub *storage.Subscription, isInitial bool) {
 
 // CheckSubscriptionNow проверяет конкретную подписку сразу (для использования после создания подписки)
 func (c *Checker) CheckSubscriptionNow(chatID int64) {
-	sub, err := c.Store.Get(chatID)
+	sub, err := c.Store.GetCurrent(chatID)
 	if err != nil || sub == nil {
 		log.Printf("⚠️ Error fetching subscription for chatID %d: %v", chatID, err)
 		return
