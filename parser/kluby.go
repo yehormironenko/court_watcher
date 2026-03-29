@@ -502,264 +502,285 @@ func CheckCourtSchedule(courtID, date, timeFrom, timeTo string) ([]types.Slot, e
 	}
 	resp.Body.Close()
 
-	// Теперь открываем страницу графика
-	scheduleURL := fmt.Sprintf("%s/%s/grafik?data_grafiku=%s&dyscyplina=1&strona=0", baseURL, courtID, date)
-	log.Printf("  → Fetching schedule page: %s", scheduleURL)
-
-	req, err = http.NewRequest("GET", scheduleURL, nil)
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("User-Agent", userAgent)
-
-	resp, err = client.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	// Логируем статус и cookies для отладки
-	log.Printf("  → Response status: %d", resp.StatusCode)
-	if jar := client.Jar; jar != nil {
-		cookies := jar.Cookies(req.URL)
-		log.Printf("  → Using %d cookies", len(cookies))
-	}
-
-	// Читаем и парсим HTML
-	bodyBytes, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
-	}
-
-	doc, err := goquery.NewDocumentFromReader(strings.NewReader(string(bodyBytes)))
-	if err != nil {
-		return nil, err
-	}
-
-	// Временная отладка для проблемных страниц
-	tableCount := doc.Find("table").Length()
-	rezerwujCount := doc.Find("a[href*='rezerwuj']").Length()
-
-	// Проверяем, требуется ли авторизация для просмотра графика
-	// Ищем конкретное сообщение, а не ссылку в меню
-	bodyStr := string(bodyBytes)
-	requiresLogin := strings.Contains(bodyStr, "Grafik widoczny po zalogowaniu") ||
-		strings.Contains(bodyStr, "widoczny po zalogowaniu") ||
-		strings.Contains(bodyStr, "Musisz się zalogować")
-
-	if requiresLogin {
-		log.Printf("  ⚠️ This court requires login - skipping (court: %s)", courtID)
-		return []types.Slot{}, nil
-	}
-
-	// Если нет таблиц или ссылок, выводим часть HTML для отладки
-	if tableCount == 0 || rezerwujCount == 0 {
-		log.Printf("  ⚠️ Warning: Found %d tables, %d 'rezerwuj' links", tableCount, rezerwujCount)
-		log.Printf("  → No available slots found for this court")
-	}
-
 	slots := make([]types.Slot, 0)
 	seen := make(map[string]bool)
-
-	// Парсим название клуба из заголовка страницы
 	clubName := ""
 
-	// Пробуем извлечь из title
-	doc.Find("title").Each(func(i int, s *goquery.Selection) {
-		title := strings.TrimSpace(s.Text())
-		// Формат: "Nazwa Klubu - Rezerwacje ONLINE | Kluby.org"
-		if strings.Contains(title, " - ") {
-			parts := strings.Split(title, " - ")
-			if len(parts) > 0 {
-				clubName = strings.TrimSpace(parts[0])
+	for page := 0; ; page++ {
+		if page > 0 {
+			rateLimit()
+		}
+
+		// Открываем страницу графика
+		scheduleURL := fmt.Sprintf("%s/%s/grafik?data_grafiku=%s&dyscyplina=1&strona=%d", baseURL, courtID, date, page)
+		log.Printf("  → Fetching schedule page: %s", scheduleURL)
+
+		req, err = http.NewRequest("GET", scheduleURL, nil)
+		if err != nil {
+			return nil, err
+		}
+		req.Header.Set("User-Agent", userAgent)
+
+		resp, err = client.Do(req)
+		if err != nil {
+			return nil, err
+		}
+
+		// Логируем статус и cookies для отладки (только для первой страницы)
+		if page == 0 {
+			log.Printf("  → Response status: %d", resp.StatusCode)
+			if jar := client.Jar; jar != nil {
+				cookies := jar.Cookies(req.URL)
+				log.Printf("  → Using %d cookies", len(cookies))
 			}
 		}
-	})
 
-	// Если не нашли в title, ищем в заголовках
-	if clubName == "" {
-		doc.Find("h1, h2, h3").Each(func(i int, s *goquery.Selection) {
-			if clubName == "" {
-				text := strings.TrimSpace(s.Text())
-				if text != "" &&
-					!strings.Contains(strings.ToLower(text), "grafik") &&
-					!strings.Contains(strings.ToLower(text), "kluby.org") &&
-					len(text) > 3 {
-					clubName = text
+		// Читаем и парсим HTML
+		bodyBytes, err := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if err != nil {
+			return nil, err
+		}
+
+		doc, err := goquery.NewDocumentFromReader(strings.NewReader(string(bodyBytes)))
+		if err != nil {
+			return nil, err
+		}
+
+		// Временная отладка для проблемных страниц
+		tableCount := doc.Find("table").Length()
+		rezerwujCount := doc.Find("a[href*='rezerwuj']").Length()
+
+		// Проверяем, требуется ли авторизация для просмотра графика
+		// Ищем конкретное сообщение, а не ссылку в меню
+		bodyStr := string(bodyBytes)
+		requiresLogin := strings.Contains(bodyStr, "Grafik widoczny po zalogowaniu") ||
+			strings.Contains(bodyStr, "widoczny po zalogowaniu") ||
+			strings.Contains(bodyStr, "Musisz się zalogować")
+
+		if requiresLogin {
+			log.Printf("  ⚠️ This court requires login - skipping (court: %s)", courtID)
+			return []types.Slot{}, nil
+		}
+
+		// Если нет таблиц или ссылок, выводим часть HTML для отладки
+		if tableCount == 0 || rezerwujCount == 0 {
+			log.Printf("  ⚠️ Warning: Found %d tables, %d 'rezerwuj' links", tableCount, rezerwujCount)
+			log.Printf("  → No available slots found for this court")
+		}
+
+		// Парсим название клуба из заголовка страницы (только один раз)
+		if clubName == "" {
+			// Пробуем извлечь из title
+			doc.Find("title").Each(func(i int, s *goquery.Selection) {
+				title := strings.TrimSpace(s.Text())
+				// Формат: "Nazwa Klubu - Rezerwacje ONLINE | Kluby.org"
+				if strings.Contains(title, " - ") {
+					parts := strings.Split(title, " - ")
+					if len(parts) > 0 {
+						clubName = strings.TrimSpace(parts[0])
+					}
 				}
-			}
-		})
-	}
+			})
 
-	if clubName == "" {
-		clubName = courtID // fallback
-	}
-
-	log.Printf("  → Club name: %s", clubName)
-
-	// Ищем таблицу с графиком (она имеет id="grafik")
-	doc.Find("table#grafik").Each(func(i int, table *goquery.Selection) {
-		// Получаем заголовки столбцов (названия кортов) только из thead
-		courtTypes := make([]string, 0)
-		table.Find("thead tr").First().Find("th").Each(func(j int, th *goquery.Selection) {
-			// Берем только видимый текст, убираем все лишнее
-			courtType := strings.TrimSpace(th.Text())
-			// Убираем множественные пробелы и переносы строк
-			courtType = strings.Join(strings.Fields(courtType), " ")
-			courtTypes = append(courtTypes, courtType)
-		})
-
-		// Track rowspans: map[rowIndex][colIndex] = remainingRows
-		// When a cell has rowspan, it occupies the next N-1 rows in that column
-		rowspanTracker := make(map[int]map[int]int)
-
-		// Парсим строки таблицы (временные слоты)
-		table.Find("tbody tr, tr").Each(func(rowIndex int, tr *goquery.Selection) {
-			// Первая ячейка - время
-			timeCell := tr.Find("td").First()
-			slotTime := strings.TrimSpace(timeCell.Text())
-
-			// Проверяем формат времени (HH:MM)
-			if !strings.Contains(slotTime, ":") {
-				return
+			// Если не нашли в title, ищем в заголовках
+			if clubName == "" {
+				doc.Find("h1, h2, h3").Each(func(i int, s *goquery.Selection) {
+					if clubName == "" {
+						text := strings.TrimSpace(s.Text())
+						if text != "" &&
+							!strings.Contains(strings.ToLower(text), "grafik") &&
+							!strings.Contains(strings.ToLower(text), "kluby.org") &&
+							len(text) > 3 {
+							clubName = text
+						}
+					}
+				})
 			}
 
-			// Нормализуем время к формату HH:MM
-			slotTime = normalizeTime(slotTime)
-
-			// Initialize tracker for this row if needed
-			if rowspanTracker[rowIndex] == nil {
-				rowspanTracker[rowIndex] = make(map[int]int)
+			if clubName == "" {
+				clubName = courtID // fallback
 			}
 
-			// Check if time is in range (but still process rowspans even if not)
-			inTimeRange := slotTime >= timeFrom && slotTime <= timeTo
+			log.Printf("  → Club name: %s", clubName)
+		}
 
-			// Get all physical cells in this row
-			cells := tr.Find("td")
+		// Ищем таблицу с графиком (она имеет id="grafik")
+		doc.Find("table#grafik").Each(func(i int, table *goquery.Selection) {
+			// Получаем заголовки столбцов (названия кортов) только из thead
+			courtTypes := make([]string, 0)
+			table.Find("thead tr").First().Find("th").Each(func(j int, th *goquery.Selection) {
+				// Берем только видимый текст, убираем все лишнее
+				courtType := strings.TrimSpace(th.Text())
+				// Убираем множественные пробелы и переносы строк
+				courtType = strings.Join(strings.Fields(courtType), " ")
+				courtTypes = append(courtTypes, courtType)
+			})
 
-			// Track which logical column we're currently at
-			logicalColIndex := 0
+			// Track rowspans: map[rowIndex][colIndex] = remainingRows
+			// When a cell has rowspan, it occupies the next N-1 rows in that column
+			rowspanTracker := make(map[int]map[int]int)
 
-			// Iterate through physical cells
-			cells.Each(func(physicalIndex int, td *goquery.Selection) {
-				// Skip to next unoccupied logical column
-				for logicalColIndex < len(courtTypes) {
-					// Check if this logical column is occupied by a rowspan from a previous row
-					isOccupied := false
-					for prevRowIndex := 0; prevRowIndex < rowIndex; prevRowIndex++ {
-						if remaining, exists := rowspanTracker[prevRowIndex][logicalColIndex]; exists && remaining > (rowIndex-prevRowIndex) {
-							isOccupied = true
-							break
+			// Парсим строки таблицы (временные слоты)
+			table.Find("tbody tr, tr").Each(func(rowIndex int, tr *goquery.Selection) {
+				// Первая ячейка - время
+				timeCell := tr.Find("td").First()
+				slotTime := strings.TrimSpace(timeCell.Text())
+
+				// Проверяем формат времени (HH:MM)
+				if !strings.Contains(slotTime, ":") {
+					return
+				}
+
+				// Нормализуем время к формату HH:MM
+				slotTime = normalizeTime(slotTime)
+
+				// Initialize tracker for this row if needed
+				if rowspanTracker[rowIndex] == nil {
+					rowspanTracker[rowIndex] = make(map[int]int)
+				}
+
+				// Check if time is in range (but still process rowspans even if not)
+				inTimeRange := slotTime >= timeFrom && slotTime <= timeTo
+
+				// Get all physical cells in this row
+				cells := tr.Find("td")
+
+				// Track which logical column we're currently at
+				logicalColIndex := 0
+
+				// Iterate through physical cells
+				cells.Each(func(physicalIndex int, td *goquery.Selection) {
+					// Skip to next unoccupied logical column
+					for logicalColIndex < len(courtTypes) {
+						// Check if this logical column is occupied by a rowspan from a previous row
+						isOccupied := false
+						for prevRowIndex := 0; prevRowIndex < rowIndex; prevRowIndex++ {
+							if remaining, exists := rowspanTracker[prevRowIndex][logicalColIndex]; exists && remaining > (rowIndex-prevRowIndex) {
+								isOccupied = true
+								break
+							}
+						}
+
+						if !isOccupied {
+							break // Found next unoccupied column
+						}
+						logicalColIndex++ // This column is occupied, try next one
+					}
+
+					if logicalColIndex >= len(courtTypes) {
+						return // No more logical columns
+					}
+
+					// Now we have: physical cell 'td' maps to logical column 'logicalColIndex'
+
+					// First cell is time column - skip it
+					if logicalColIndex == 0 {
+						logicalColIndex++
+						return
+					}
+
+					// Check for rowspan attribute and track it
+					rowspanStr, hasRowspan := td.Attr("rowspan")
+					if hasRowspan {
+						rowspan := 1
+						fmt.Sscanf(rowspanStr, "%d", &rowspan)
+						if rowspan > 1 {
+							rowspanTracker[rowIndex][logicalColIndex] = rowspan
 						}
 					}
 
-					if !isOccupied {
-						break // Found next unoccupied column
+					// Сначала проверяем текст ячейки на "Zarezerwowane"
+					cellText := strings.TrimSpace(td.Text())
+					if strings.Contains(cellText, "Zarezerwowane") ||
+						strings.Contains(cellText, "zarezerwowane") {
+						logicalColIndex++ // Move to next logical column for next physical cell
+						return            // Слот забронирован
 					}
-					logicalColIndex++ // This column is occupied, try next one
-				}
 
-				if logicalColIndex >= len(courtTypes) {
-					return // No more logical columns
-				}
-
-				// Now we have: physical cell 'td' maps to logical column 'logicalColIndex'
-
-				// First cell is time column - skip it
-				if logicalColIndex == 0 {
-					logicalColIndex++
-					return
-				}
-
-				// Check for rowspan attribute and track it
-				rowspanStr, hasRowspan := td.Attr("rowspan")
-				if hasRowspan {
-					rowspan := 1
-					fmt.Sscanf(rowspanStr, "%d", &rowspan)
-					if rowspan > 1 {
-						rowspanTracker[rowIndex][logicalColIndex] = rowspan
+					// Ищем ссылку "Rezerwuj"
+					link := td.Find("a[href*='rezerwuj']")
+					if link.Length() == 0 {
+						logicalColIndex++ // Move to next logical column
+						return            // Слот занят или недоступен
 					}
-				}
 
-				// Сначала проверяем текст ячейки на "Zarezerwowane"
-				cellText := strings.TrimSpace(td.Text())
-				if strings.Contains(cellText, "Zarezerwowane") ||
-					strings.Contains(cellText, "zarezerwowane") {
-					logicalColIndex++ // Move to next logical column for next physical cell
-					return            // Слот забронирован
-				}
+					linkText := strings.TrimSpace(link.Text())
+					if !strings.Contains(strings.ToLower(linkText), "rezerwuj") {
+						logicalColIndex++
+						return
+					}
 
-				// Ищем ссылку "Rezerwuj"
-				link := td.Find("a[href*='rezerwuj']")
-				if link.Length() == 0 {
-					logicalColIndex++ // Move to next logical column
-					return            // Слот занят или недоступен
-				}
+					// Only create slots for rows in the time range
+					if !inTimeRange {
+						logicalColIndex++
+						return
+					}
 
-				linkText := strings.TrimSpace(link.Text())
-				if !strings.Contains(strings.ToLower(linkText), "rezerwuj") {
+					// Получаем href для бронирования
+					href, exists := link.Attr("href")
+					if !exists {
+						logicalColIndex++
+						return
+					}
+
+					// Определяем тип корта из заголовка столбца
+					courtType := ""
+					if logicalColIndex < len(courtTypes) {
+						courtType = courtTypes[logicalColIndex]
+					}
+
+					// Пропускаем открытые корты (проверяем ДО очистки!)
+					courtTypeLower := strings.ToLower(courtType)
+					if strings.Contains(courtTypeLower, "otwarte") ||
+						strings.Contains(courtTypeLower, "odkryte") ||
+						strings.Contains(courtTypeLower, "odkryt") ||
+						strings.Contains(courtTypeLower, "otwart") {
+						logicalColIndex++
+						return
+					}
+
+					// Очищаем название корта
+					courtType = cleanCourtName(courtType)
+
+					// Создаем слот
+					slot := types.Slot{
+						ClubID:    courtID,
+						ClubName:  clubName,
+						CourtType: courtType,
+						TypeID:    courtID, // используем courtID как typeID
+						Date:      date,
+						Time:      slotTime,
+						Duration:  2, // по умолчанию 2 часа
+						Price:     "0,00",
+						URL:       baseURL + href,
+					}
+
+					// Дедупликация
+					uniqueID := slot.UniqueID()
+					if !seen[uniqueID] {
+						slots = append(slots, slot)
+						seen[uniqueID] = true
+					}
+
+					// Move to next logical column for next physical cell
 					logicalColIndex++
-					return
-				}
-
-				// Only create slots for rows in the time range
-				if !inTimeRange {
-					logicalColIndex++
-					return
-				}
-
-				// Получаем href для бронирования
-				href, exists := link.Attr("href")
-				if !exists {
-					logicalColIndex++
-					return
-				}
-
-				// Определяем тип корта из заголовка столбца
-				courtType := ""
-				if logicalColIndex < len(courtTypes) {
-					courtType = courtTypes[logicalColIndex]
-				}
-
-				// Пропускаем открытые корты (проверяем ДО очистки!)
-				courtTypeLower := strings.ToLower(courtType)
-				if strings.Contains(courtTypeLower, "otwarte") ||
-					strings.Contains(courtTypeLower, "odkryte") ||
-					strings.Contains(courtTypeLower, "odkryt") ||
-					strings.Contains(courtTypeLower, "otwart") {
-					logicalColIndex++
-					return
-				}
-
-				// Очищаем название корта
-				courtType = cleanCourtName(courtType)
-
-				// Создаем слот
-				slot := types.Slot{
-					ClubID:    courtID,
-					ClubName:  clubName,
-					CourtType: courtType,
-					TypeID:    courtID, // используем courtID как typeID
-					Date:      date,
-					Time:      slotTime,
-					Duration:  2, // по умолчанию 2 часа
-					Price:     "0,00",
-					URL:       baseURL + href,
-				}
-
-				// Дедупликация
-				uniqueID := slot.UniqueID()
-				if !seen[uniqueID] {
-					slots = append(slots, slot)
-					seen[uniqueID] = true
-				}
-
-				// Move to next logical column for next physical cell
-				logicalColIndex++
+				})
 			})
 		})
-	})
+
+		// Проверяем наличие следующей страницы
+		nextPage := page + 1
+		// Корты с заведомо известными несколькими страницами
+		multiPageCourts := map[string]bool{"mera": true, "tenes": true}
+		nextPageLink := fmt.Sprintf("strona=%d", nextPage)
+		hasNextPage := multiPageCourts[courtID] && nextPage == 1 ||
+			doc.Find(fmt.Sprintf("a[href*='%s']", nextPageLink)).Length() > 0
+		if !hasNextPage {
+			break
+		}
+		log.Printf("  → Fetching page %d for %s...", nextPage, courtID)
+	}
 
 	log.Printf("  → Found %d available slots for %s on %s (time range: %s-%s)", len(slots), courtID, date, timeFrom, timeTo)
 	return slots, nil
