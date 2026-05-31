@@ -19,10 +19,8 @@ import (
 )
 
 const (
-	baseURL    = "https://kluby.org"
-	userAgent  = "Mozilla/5.0 (compatible; CourtsBot/1.0)"
-	loginEmail = "wazap_by@mail.ru"
-	loginPass  = "6282373"
+	baseURL   = "https://kluby.org"
+	userAgent = "Mozilla/5.0 (compatible; CourtsBot/1.0)"
 )
 
 var (
