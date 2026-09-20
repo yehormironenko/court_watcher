@@ -1,6 +1,7 @@
 package parser
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -20,7 +21,7 @@ import (
 
 const (
 	baseURL   = "https://kluby.org"
-	userAgent = "Mozilla/5.0 (compatible; CourtsBot/1.0)"
+	userAgent = "curl/8.10.1"
 )
 
 var (
@@ -152,7 +153,7 @@ func normalizeTime(t string) string {
 
 // rateLimit добавляет задержку между запросами
 func rateLimit() {
-	delay := time.Duration(200+rand.Intn(301)) * time.Millisecond
+	delay := time.Duration(1000+rand.Intn(2001)) * time.Millisecond
 	elapsed := time.Since(lastRequest)
 
 	if elapsed < delay {
@@ -492,11 +493,12 @@ func CheckCourtSchedule(courtID, date, timeFrom, timeTo string) ([]types.Slot, e
 	if err != nil {
 		return nil, err
 	}
-	//req.Header.Set("User-Agent", userAgent)
-	req.Header.Set("User-Agent", "curl/8.10.1")
+	req.Header.Set("User-Agent", userAgent)
 	req.Header.Set("Accept", "*/*")
 
-	resp, err := client.Do(req)
+	//resp, err := client.Do(req)
+	resp, err := doRequest(context.Background(), client, *NewRateLimiter(), req)
+
 	if err != nil {
 		return nil, err
 	}
@@ -784,4 +786,44 @@ func CheckCourtSchedule(courtID, date, timeFrom, timeTo string) ([]types.Slot, e
 
 	log.Printf("  → Found %d available slots for %s on %s (time range: %s-%s)", len(slots), courtID, date, timeFrom, timeTo)
 	return slots, nil
+}
+
+func doRequest(ctx context.Context, client *http.Client, limiter RateLimiter, req *http.Request) (*http.Response, error) {
+	for {
+		if err := limiter.Wait(ctx); err != nil {
+			return nil, err
+		}
+
+		resp, err := client.Do(req)
+		if err != nil {
+			return nil, err
+		}
+
+		if resp.StatusCode != http.StatusTooManyRequests {
+			return resp, nil
+		}
+
+		// 429
+		delay := RetryAfter(resp)
+
+		log.Printf(
+			"⚠️ Received 429 for %s %s, waiting %s",
+			req.Method,
+			req.URL.String(),
+			delay,
+		)
+
+		log.Printf(
+			"   Retry-After: %q",
+			resp.Header.Get("Retry-After"),
+		)
+
+		resp.Body.Close()
+
+		// This cooldown applies globally to the limiter,
+		// so other goroutines will also wait.
+		limiter.BlockFor(delay)
+
+		// Continue the loop and retry the request.
+	}
 }
