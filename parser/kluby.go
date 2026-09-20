@@ -492,7 +492,9 @@ func CheckCourtSchedule(courtID, date, timeFrom, timeTo string) ([]types.Slot, e
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("User-Agent", userAgent)
+	//req.Header.Set("User-Agent", userAgent)
+	req.Header.Set("User-Agent", "curl/8.10.1")
+	req.Header.Set("Accept", "*/*")
 
 	resp, err := client.Do(req)
 	if err != nil {
