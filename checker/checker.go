@@ -174,10 +174,10 @@ func (c *Checker) findAvailableSlots(sub *storage.Subscription) []types.Slot {
 	// Для каждого корта
 	for _, courtID := range sub.Courts {
 		// Для каждой даты
+		if courtID == "mera" { //TODO temp
+			dates = c.generateDates(sub.Days, 3)
+		}
 		for _, date := range dates {
-			if courtID == "mera" { //TODO temp
-				dates = c.generateDates(sub.Days, 3)
-			}
 			// Один запрос на корт на день - получаем весь график
 			slots, err := parser.CheckCourtSchedule(courtID, date, sub.TimeFrom, sub.TimeTo)
 			if err != nil {
